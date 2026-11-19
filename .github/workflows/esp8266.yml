@@ -1,0 +1,56 @@
+name: Build ESP8266 Firmware
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'ESP8266/*.ino'
+      
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v5
+
+    - name: Install Arduino-cli
+      run: |
+        # Arduino-Cli Debian package
+        sudo apt update
+        sudo apt install git wget -y
+        wget -O arduino-cli.deb https://github.com/xiv3r/arduino-cli/releases/download/arduino-cli/arduino-cli.deb
+        sudo dpkg -i arduino-cli.deb
+        sudo apt --fix-broken install -y
+        sudo dpkg --configure -a
+        
+        arduino-cli config init
+        arduino-cli config add board_manager.additional_urls https://arduino.esp8266.com/stable/package_esp8266com_index.json
+        arduino-cli core update-index
+        arduino-cli core install esp8266:esp8266
+        
+        # Install libraries
+        arduino-cli lib install "Adafruit BME280 Library"
+        arduino-cli lib install "Adafruit Unified Sensor"
+        arduino-cli lib install "ArduinoJson" 
+        
+        # Compile firmware
+        cd ESP8266
+        mv *.ino ESP8266.ino
+        arduino-cli compile --fqbn esp8266:esp8266:nodemcuv2:xtal=160,eesz=4M3M,mmu=4816 --output-dir firmware .
+        
+        mv firmware/*.ino.bin      firmware/esp8266-bme280-0x0.bin
+        mv firmware/esp8266-bme280-0x0.bin .
+
+    - name: Commit firmware binary
+      run: |
+        git config user.name  "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git pull --rebase --autostash origin main
+        git add -f ESP8266/*.bin
+        git commit -m "chore: update firmware binary [skip ci]" || echo "No changes to commit"
+        git push origin HEAD:main
